@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>DreamCure</title>
+<style>
+  :root{ --ink:#f6f9ff; --glass:rgba(255,255,255,.13); --line:rgba(255,255,255,.4); }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#dbe8f7;color:var(--ink);
+    font-family:"Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+    user-select:none;-webkit-user-select:none;touch-action:none}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;image-rendering:auto}
+  .shadowtxt{text-shadow:0 1px 10px rgba(15,35,90,.65),0 0 2px rgba(15,35,90,.4)}
+
+  #hud{position:fixed;inset:0;pointer-events:none}
+  #zone{position:absolute;left:0;right:0;top:17%;text-align:center;font-style:italic;font-weight:400;
+    font-size:clamp(28px,5.4vw,60px);letter-spacing:.05em;opacity:0;transition:opacity 1.8s ease}
+  #zone.show{opacity:1}
+  #dot{position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px;border-radius:50%;
+    background:rgba(255,255,255,.7);box-shadow:0 0 6px rgba(20,40,90,.6)}
+  #hint{position:absolute;left:0;right:0;bottom:20px;text-align:center;font-size:14px;letter-spacing:.03em;
+    opacity:0;transition:opacity 1.6s}
+  #hint.show{opacity:.9}
+  #realms{position:absolute;left:20px;bottom:20px;font-size:13px;line-height:1.7;opacity:.75}
+  #realms b{font-weight:600;opacity:1}
+  #realms span{opacity:.6}
+  #realms .cur{opacity:1;font-weight:600}
+  #info{position:absolute;right:16px;top:12px;font-size:12px;opacity:0;font-variant-numeric:tabular-nums}
+  #info.show{opacity:.8}
+  #toast{position:absolute;left:0;right:0;top:34%;text-align:center;font-size:18px;font-style:italic;opacity:0;transition:opacity .5s}
+  #toast.show{opacity:1}
+
+  .screen{position:fixed;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:24px;transition:opacity 1.2s ease}
+  #title{background:radial-gradient(ellipse at 50% 60%,rgba(255,240,215,.08) 0%,rgba(14,32,90,.55) 100%)}
+  #title.hide,#pause:not(.show){opacity:0;pointer-events:none}
+  #pause{background:rgba(14,32,90,.42);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);cursor:pointer}
+  #pause.show{opacity:1}
+  h1{margin:0;font-weight:300;font-size:clamp(48px,11vw,124px);letter-spacing:.14em;line-height:1}
+  h1 b{font-weight:600}
+  .sub{margin:16px 0 32px;font-size:clamp(16px,2.3vw,22px);font-style:italic;letter-spacing:.08em}
+  button.main{font-family:inherit;font-size:18px;letter-spacing:.22em;color:var(--ink);padding:14px 40px;border-radius:999px;
+    border:1px solid var(--line);background:var(--glass);cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    transition:background .3s,transform .3s}
+  button.main:hover{background:rgba(255,255,255,.3);transform:translateY(-2px)}
+  button.main:focus-visible{outline:2px solid #fff;outline-offset:3px}
+  .keys{margin-top:30px;font-size:14px;line-height:1.85;opacity:.9;max-width:560px}
+  .keys kbd{font-family:inherit;border:1px solid var(--line);border-radius:6px;padding:0 7px;background:var(--glass);font-size:13px}
+
+  #err{position:fixed;left:12px;right:12px;bottom:12px;z-index:9;max-height:45%;overflow:auto;display:none;
+    background:rgba(40,0,10,.88);color:#ffd7d7;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;padding:12px;border-radius:10px;
+    white-space:pre-wrap;user-select:text;-webkit-user-select:text}
+  @media (prefers-reduced-motion:reduce){#zone,.screen{transition:none}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud" class="shadowtxt">
+  <div id="zone"></div>
+  <div id="dot"></div>
+  <div id="toast"></div>
+  <div id="info"></div>
+  <div id="realms"></div>
+  <div id="hint">WASD caminar · ratón mirar · Shift correr · Espacio saltar · F volar · 1 2 3 cambiar de sueño</div>
+</div>
+
+<div id="title" class="screen shadowtxt">
+  <h1>Dream<b>Cure</b></h1>
+  <div class="sub">Camina libre. Sigue la luz.</div>
+  <button id="start" class="main">ENTRAR</button>
+  <div class="keys">
+    <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> caminar · <kbd>Ratón</kbd> mirar · <kbd>Shift</kbd> correr · <kbd>Espacio</kbd> saltar<br>
+    <kbd>F</kbd> volar (<kbd>Espacio</kbd> sube, <kbd>C</kbd> baja) · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> o <kbd>Tab</kbd> cambiar de sueño<br>
+    <kbd>Q</kbd> calidad · <kbd>H</kbd> ver rendimiento · <kbd>Esc</kbd> pausa
+  </div>
+</div>
+
+<div id="pause" class="screen shadowtxt">
+  <div class="sub" style="margin:0">En pausa · haz clic para continuar</div>
+</div>
+
+<pre id="err"></pre>
+
+<script>
+/* =====================================================================
+   DreamCure — exploración libre en 3D
+   Un solo archivo. Raymarching en WebGL2 (sin librerías, sin imágenes).
+   ===================================================================== */
+
+/* ---------- GANCHOS PARA TU SONIDO ----------
+   Asigna tus funciones cuando quieras agregar audio:
+     DreamCure.onStart = () => {}
+     DreamCure.onStep  = ({running, realm}) => {}   // cada paso al caminar
+     DreamCure.onJump  = () => {}
+     DreamCure.onLand  = () => {}
+     DreamCure.onRealm = (index, name) => {}         // 0 Colinas, 1 Camino al cielo, 2 Túnel de nubes
+     DreamCure.onPause = (isPaused) => {}
+   Estado leíble: DreamCure.realm, DreamCure.pos [x,y,z], DreamCure.flying
+---------------------------------------------------------------------- */
+window.DreamCure = { onStart:null, onStep:null, onJump:null, onLand:null, onRealm:null, onPause:null,
+                     realm:0, pos:[0,0,0], flying:false };
+
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const REALM_NAMES = ['Colinas del Sueño', 'El Camino al Cielo', 'Túnel de Nubes'];
+
+/* =====================================================================
+   SHADERS
+   ===================================================================== */
+const VERT = `#version 300 es
+void main(){
+  vec2 p = vec2(float((gl_VertexID<<1)&2), float(gl_VertexID&2));
+  gl_Position = vec4(p*2.0-1.0, 0.0, 1.0);
+}`;
+
+/* ---------- Común: ruido entero (idéntico en JS), utilidades ---------- */
+const COMMON = `#version 300 es
+precision highp float;
+precision highp int;
+uniform vec2 uRes;
+uniform vec3 uPos;
+uniform vec3 uFwd;
+uniform vec3 uRight;
+uniform vec3 uUp;
+uniform float uFocal;
+uniform float uTime;
+uniform float uFade;
+uniform int uSteps;
+uniform int uSh;
+uniform int uAO;
+uniform int uCl;
+uniform int uBis;
+out vec4 outColor;
+
+uint ihash2(uvec2 q){ q*=uvec2(1597334673u,3812015801u); return (q.x^q.y)*1597334673u; }
+float h2(vec2 i){ uvec2 q=uvec2(ivec2(i)+ivec2(32768)); return float(ihash2(q)>>8u)*(1.0/16777216.0); }
+uint ihash3(uvec3 q){ q*=uvec3(1597334673u,3812015801u,2798796415u); return (q.x^q.y^q.z)*1597334673u; }
+float h3(vec3 i){ uvec3 q=uvec3(ivec3(i)+ivec3(32768)); return float(ihash3(q)>>8u)*(1.0/16777216.0); }
+
+float vnoise(vec2 x){
+  vec2 i=floor(x); vec2 f=fract(x); f=f*f*(3.0-2.0*f);
+  float a=h2(i); float b=h2(i+vec2(1.0,0.0)); float c=h2(i+vec2(0.0,1.0)); float d=h2(i+vec2(1.0,1.0));
+  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
+}
+float vnoise3(vec3 x){
+  vec3 i=floor(x); vec3 f=fract(x); f=f*f*(3.0-2.0*f);
+  float a=h3(i); float b=h3(i+vec3(1.0,0.0,0.0)); float c=h3(i+vec3(0.0,1.0,0.0)); float d=h3(i+vec3(1.0,1.0,0.0));
+  float e=h3(i+vec3(0.0,0.0,1.0)); float g=h3(i+vec3(1.0,0.0,1.0)); float k=h3(i+vec3(0.0,1.0,1.0)); float l=h3(i+vec3(1.0,1.0,1.0));
+  return mix(mix(mix(a,b,f.x),mix(c,d,f.x),f.y), mix(mix(e,g,f.x),mix(k,l,f.x),f.y), f.z);
+}
+float fbm3(vec3 p){
+  float f=0.5*vnoise3(p);
+  p=p*2.02+vec3(3.1,1.7,5.3); f+=0.25*vnoise3(p);
+  p=p*2.03+vec3(1.3,7.1,2.9); f+=0.125*vnoise3(p);
+  return f/0.875;
+}
+float sdBox(vec3 p, vec3 b){ vec3 q=abs(p)-b; return length(max(q,0.0))+min(max(q.x,max(q.y,q.z)),0.0); }
+
+vec3 applyFog(vec3 col, float t, vec3 rd, vec3 fogC, vec3 sunC, vec3 sun, float dens){
+  float f=1.0-exp(-t*dens);
+  float s=pow(max(dot(rd,sun),0.0),5.0);
+  return mix(col, mix(fogC,sunC,s*0.55), f);
+}
+`;
+
+/* ---------- Principal (tonemap, vignette, fade) ---------- */
+const MAIN = `
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+void main(){
+  vec2 uv=(gl_FragCoord.xy-0.5*uRes)/uRes.y;
+  vec3 rd=normalize(uFwd*uFocal+uRight*uv.x+uUp*uv.y);
+  vec3 col=render(uPos,rd);
+  col=aces(col*EXPO);
+  col=pow(col,vec3(1.0/2.2));
+  col*=1.0-0.30*dot(uv,uv);
+  col+=(h2(gl_FragCoord.xy+floor(uTime*30.0))-0.5)/190.0;
+  col=mix(col,vec3(1.0),uFade);
+  outColor=vec4(col,1.0);
+}`;
+
+/* =====================================================================
+   REINO 0 — Colinas del Sueño
+   Mesetas verdes de laderas empinadas, un camino de tierra, casas rosas
+   sobre lomas, nubes volumétricas, AO por campo de alturas, sombras suaves.
+   ===================================================================== */
+const REALM0 = `
+const vec3 SUN=vec3(-0.5166,0.5682,0.6405);
+const vec3 SUNC=vec3(1.0,0.86,0.66);
+const vec3 FOGC=vec3(0.72,0.84,0.96);
+const float EXPO=1.0;
+
+float pathX(float z){ return 70.0*sin(z*0.011)+38.0*sin(z*0.027+1.0); }
+
+float baseH0(vec2 p){
+  vec2 q=p+45.0*vec2(vnoise(p*0.007+vec2(5.2,1.3)), vnoise(p*0.007+vec2(8.3,2.8)));
+  float n1=(vnoise(q*0.0040+vec2(11.3,7.1))+0.35*vnoise(q*0.0085+vec2(3.7,19.2)))/1.35;
+  float n2=vnoise(q*0.0031+vec2(31.1,2.9));
+  float t1=smoothstep(0.42,0.60,n1);
+  float t2=smoothstep(0.50,0.68,n2)*t1;
+  return 48.0*t1+34.0*t2+3.0*n1+5.0*vnoise(p*0.018+vec2(2.2,6.6));
+}
+
+/* (x,z de la casa, existe, lado) */
+vec4 houseAt(vec2 p){
+  float cz=floor(p.y/900.0);
+  float hz=(cz+0.5)*900.0+(h2(vec2(cz,3.0))-0.5)*160.0;
+  float px=pathX(hz);
+  float cx=floor((p.x-px+350.0)/700.0);
+  float ex=h2(vec2(cx*7.0+cz*13.0,5.0));
+  float side=h2(vec2(cx+cz*3.0,11.0))<0.5?-1.0:1.0;
+  return vec4(px+cx*700.0+side*22.0, hz, ex>0.3?1.0:0.0, side);
+}
+
+float heightFull(vec2 p, vec4 hi, float hd, float hc){
+  float h=baseH0(p);
+  if(hi.z>0.5 && hd<70.0){
+    float m=1.0-smoothstep(18.0,64.0,hd);
+    h=mix(h, hc+2.5*(1.0-smoothstep(0.0,40.0,hd)), m);
+  }
+  float q=p.x-pathX(p.y);
+  q=mod(q+350.0,700.0)-350.0;
+  float dp=abs(q);
+  if(dp<14.0){
+    float pc=baseH0(vec2(p.x-q,p.y));
+    float m=1.0-smoothstep(1.8,14.0,dp);
+    h=mix(h,pc,m);
+  }
+  return h;
+}
+float hgt(vec2 p){
+  vec4 hi=houseAt(p);
+  float hd=1.0e5; float hc=0.0;
+  if(hi.z>0.5){ hd=length(p-hi.xy); if(hd<70.0) hc=baseH0(vec2(hi.x-hi.w*22.0,hi.y)); }
+  return heightFull(p,hi,hd,hc);
+}
+
+float houseSD(vec3 p, vec4 hi, float by){
+  vec3 q=vec3((p.x-hi.x)*(-hi.w), p.y-by, p.z-hi.y);
+  float body=sdBox(q-vec3(0.0,2.4,0.0),vec3(4.4,2.4,3.4));
+  float roof=max(max(abs(q.z)-3.95,4.7-q.y),(abs(q.x)*0.55+(q.y-4.7)-2.7)*0.876);
+  float chim=sdBox(q-vec3(-1.6,6.4,1.4),vec3(0.55,1.4,0.55));
+  return min(min(body,roof),chim);
+}
+vec3 nrmH(vec3 p, vec4 hi, float by){
+  vec2 e=vec2(0.03,0.0);
+  return normalize(vec3(houseSD(p+e.xyy,hi,by)-houseSD(p-e.xyy,hi,by),
+                        houseSD(p+e.yxy,hi,by)-houseSD(p-e.yxy,hi,by),
+                        houseSD(p+e.yyx,hi,by)-houseSD(p-e.yyx,hi,by)));
+}
+
+vec3 nrm0(vec3 p, float t){
+  float e=max(0.3,0.0012*t);
+  float hx=hgt(p.xz+vec2(e,0.0))-hgt(p.xz-vec2(e,0.0));
+  float hz=hgt(p.xz+vec2(0.0,e))-hgt(p.xz-vec2(0.0,e));
+  return normalize(vec3(-hx,2.0*e,-hz));
+}
+
+vec3 sky0(vec3 rd){
+  float y=max(rd.y,0.0);
+  vec3 c=mix(vec3(0.72,0.84,0.96),vec3(0.15,0.37,0.80),pow(y,0.45));
+  float sd=max(dot(rd,SUN),0.0);
+  c+=SUNC*(pow(sd,8.0)*0.22+pow(sd,64.0)*0.35+pow(sd,3000.0)*6.0);
+  return c;
+}
+
+float cloud0(vec3 p, bool full){
+  float h=(p.y-300.0)/260.0;
+  if(h<0.0||h>1.0) return 0.0;
+  vec2 q=p.xz*0.0011+vec2(uTime*0.0008+3.0,4.0);
+  float cov=0.65*vnoise(q)+0.35*vnoise(q*2.7+vec2(8.0,1.0));
+  float prof=smoothstep(0.0,0.2,h)*(1.0-smoothstep(0.45,1.0,h));
+  float d=(cov-0.5)*2.4+prof*0.5-0.5;
+  if(full && d>-0.3){
+    float n=fbm3(p*0.011+vec3(uTime*0.004,0.0,0.0));
+    d+=(n-0.5)*0.9;
+  }
+  return clamp(d*2.2,0.0,1.0);
+}
+vec4 clouds0(vec3 ro, vec3 rd, float tEnd){
+  if(abs(rd.y)<0.002) return vec4(0.0,0.0,0.0,1.0);
+  float ta=(300.0-ro.y)/rd.y; float tb=(560.0-ro.y)/rd.y;
+  float t0=max(min(ta,tb),0.0); float t1=min(max(ta,tb),tEnd);
+  t1=min(t1,t0+4500.0);
+  if(t1<=t0) return vec4(0.0,0.0,0.0,1.0);
+  float dt=(t1-t0)/float(uCl);
+  float t=t0+dt*h2(gl_FragCoord.xy);
+  float T=1.0; vec3 acc=vec3(0.0);
+  for(int i=0;i<uCl;i++){
+    if(T<0.03||t>t1) break;
+    vec3 p=ro+rd*t;
+    float d=cloud0(p,true);
+    if(d>0.004){
+      float dl=cloud0(p+SUN*30.0,true);
+      float dif=clamp((d-dl)*2.0+0.5,0.0,1.0);
+      float hh=clamp((p.y-300.0)/260.0,0.0,1.0);
+      vec3 amb=mix(vec3(0.45,0.55,0.75),vec3(0.62,0.74,0.98),hh);
+      vec3 lit=SUNC*2.8*dif*exp(-dl*1.1)+amb;
+      lit+=SUNC*pow(max(dot(rd,SUN),0.0),6.0)*1.5*exp(-d);
+      lit=mix(lit,FOGC,1.0-exp(-t*0.00025));
+      float a=1.0-exp(-d*0.032*dt);
+      acc+=T*a*lit;
+      T*=1.0-a;
+    }
+    t+=dt;
+  }
+  return vec4(acc,T);
+}
+
+bool march0(vec3 ro, vec3 rd, out float t){
+  t=0.3; float tp=0.3;
+  for(int i=0;i<uSteps;i++){
+    vec3 p=ro+rd*t;
+    vec4 hi=houseAt(p.xz);
+    float hd=1.0e5; float hc=0.0;
+    if(hi.z>0.5){ hd=length(p.xz-hi.xy); if(hd<70.0) hc=baseH0(vec2(hi.x-hi.w*22.0,hi.y)); }
+    float h=p.y-heightFull(p.xz,hi,hd,hc);
+    float dh=1.0e5;
+    if(hd<26.0) dh=houseSD(p,hi,hc+2.35);
+    if(dh<0.002*t+0.02) return true;
+    if(h<0.0){
+      float a=tp; float b=t;
+      for(int j=0;j<uBis;j++){
+        float m=0.5*(a+b); vec3 q=ro+rd*m;
+        if(q.y<hgt(q.xz)) b=m; else a=m;
+      }
+      t=0.5*(a+b); return true;
+    }
+    if(h<0.0012*t+0.01) return true;
+    if(p.y>150.0&&rd.y>=0.0) return false;
+    tp=t;
+    float st=max(h*0.6, t<150.0?0.015*t:0.03*t);
+    t+=min(st,dh);
+    if(t>3000.0) return false;
+  }
+  return rd.y<0.02;
+}
+
+float shadow0(vec3 ro){
+  vec4 hi=houseAt(ro.xz);
+  float hd=length(ro.xz-hi.xy);
+  bool hs=hi.z>0.5 && hd<90.0;
+  float by=0.0;
+  if(hs) by=baseH0(vec2(hi.x-hi.w*22.0,hi.y))+2.35;
+  float res=1.0; float t=0.6;
+  for(int i=0;i<uSh;i++){
+    vec3 p=ro+SUN*t;
+    float d=p.y-hgt(p.xz);
+    if(hs) d=min(d,houseSD(p,hi,by));
+    res=min(res,7.0*d/t);
+    t+=clamp(d,0.8,45.0);
+    if(res<0.01||t>900.0||p.y>200.0) break;
+  }
+  return clamp(res,0.0,1.0);
+}
+
+float ao0(vec3 p, vec3 n){
+  float occ=0.0; float sca=1.0;
+  for(int i=0;i<uAO;i++){
+    float h=0.4+float(i)*float(i);
+    vec3 q=p+n*h;
+    float d=max(q.y-hgt(q.xz),0.0);
+    occ+=(h-d)*sca; sca*=0.72;
+  }
+  return clamp(1.0-occ/7.0,0.0,1.0);
+}
+
+vec3 houseCol(vec3 q, vec3 nl){
+  vec3 col=vec3(0.96,0.78,0.80);
+  float roofM=step(0.3,nl.y)*step(4.6,q.y);
+  col=mix(col,vec3(0.80,0.36,0.50),roofM);
+  float ch=step(5.0,q.y)*step(abs(q.x+1.6),0.7)*step(abs(q.z-1.4),0.7);
+  col=mix(col,vec3(0.62,0.38,0.34),ch);
+  vec3 trim=vec3(0.97,0.94,0.90);
+  if(nl.x>0.8){
+    float frame=step(abs(q.z),1.0)*step(q.y,2.5);
+    float door=step(abs(q.z),0.8)*step(q.y,2.3);
+    col=mix(col,trim,frame);
+    col=mix(col,vec3(0.25,0.58,0.58),door);
+    float wf=step(abs(abs(q.z)-2.3),0.8)*step(abs(q.y-2.4),1.0);
+    float w=step(abs(abs(q.z)-2.3),0.6)*step(abs(q.y-2.4),0.8);
+    col=mix(col,trim,wf);
+    col=mix(col,vec3(0.42,0.60,0.78),w);
+  }
+  if(abs(nl.z)>0.8){
+    float wf=step(abs(abs(q.x)-1.9),0.8)*step(abs(q.y-2.5),0.95);
+    float w=step(abs(abs(q.x)-1.9),0.6)*step(abs(q.y-2.5),0.75);
+    col=mix(col,trim,wf);
+    col=mix(col,vec3(0.42,0.60,0.78),w);
+  }
+  col*=mix(0.78,1.0,smoothstep(0.0,0.6,q.y));
+  return col;
+}
+
+vec3 shadeHouse(vec3 p, vec4 hi, float by, vec3 rd){
+  vec3 n=nrmH(p,hi,by);
+  vec3 q=vec3((p.x-hi.x)*(-hi.w), p.y-by, p.z-hi.y);
+  vec3 nl=vec3(n.x*(-hi.w),n.y,n.z);
+  vec3 alb=houseCol(q,nl);
+  float sh=shadow0(p+n*0.15);
+  float dif=clamp(dot(n,SUN),0.0,1.0);
+  float ao=mix(0.5,1.0,smoothstep(0.0,2.2,q.y));
+  vec3 skyl=mix(vec3(0.22,0.28,0.35),vec3(0.50,0.66,0.98),0.5+0.5*n.y)*ao;
+  return alb*(SUNC*3.0*dif*sh+skyl*1.1);
+}
+
+vec3 shade0(vec3 p, vec3 n, vec3 rd, float t){
+  vec2 q=p.xz;
+  float slope=1.0-n.y;
+  float n1=vnoise(q*0.06); float n2=vnoise(q*0.45); float n3=vnoise(q*2.3);
+  vec3 gA=vec3(0.12,0.29,0.05); vec3 gB=vec3(0.34,0.50,0.11); vec3 gC=vec3(0.07,0.19,0.06);
+  vec3 alb=mix(gA,gB,clamp(n1*0.8+n2*0.5-0.15,0.0,1.0));
+  alb=mix(alb,gC,smoothstep(0.55,0.95,n3)*0.5);
+  float streak=vnoise(vec2((q.x+q.y)*0.8,p.y*0.08));
+  alb=mix(alb,vec3(0.09,0.17,0.05),smoothstep(0.12,0.55,slope)*(0.3+0.6*streak));
+  alb=mix(alb,vec3(0.30,0.31,0.22),smoothstep(0.6,0.85,slope)*0.6);
+  float fl=step(0.91,vnoise(q*3.1+vec2(7.0,3.0)))*(1.0-smoothstep(0.1,0.3,slope))*(1.0-smoothstep(60.0,300.0,t));
+  alb=mix(alb,vec3(0.95,0.78,0.88),fl*0.9);
+  float qx=p.x-pathX(p.z); qx=mod(qx+350.0,700.0)-350.0;
+  float dp=abs(qx)+(n2-0.5)*0.9;
+  float pm=1.0-smoothstep(1.6,2.5,dp);
+  vec3 pc=mix(vec3(0.60,0.50,0.35),vec3(0.80,0.71,0.54),n3);
+  alb=mix(alb,pc,pm);
+
+  float bf=1.0-smoothstep(30.0,260.0,t);
+  vec2 g=vec2(vnoise(q*1.7)-vnoise(q*1.7+vec2(0.31,0.0)), vnoise(q*1.7)-vnoise(q*1.7+vec2(0.0,0.31)));
+  n=normalize(n+vec3(g.x,0.0,g.y)*1.6*bf*(1.0-pm));
+
+  float sh=shadow0(p+n*0.4);
+  float ao=ao0(p,n);
+  float dif=clamp(dot(n,SUN),0.0,1.0);
+  vec3 skyl=mix(vec3(0.20,0.28,0.38),vec3(0.46,0.64,0.98),0.5+0.5*n.y)*ao;
+  vec3 col=alb*(SUNC*3.0*dif*sh+skyl*1.15);
+  col+=alb*vec3(0.30,0.34,0.14)*0.35*ao*(1.0-n.y*0.6);
+  float tr=pow(clamp(dot(rd,SUN),0.0,1.0),3.0)*sh*(1.0-smoothstep(0.1,0.4,slope));
+  col+=alb*vec3(0.55,0.65,0.12)*tr*0.9;
+  return col;
+}
+
+vec3 render(vec3 ro, vec3 rd){
+  float t;
+  vec3 col=sky0(rd);
+  float tHit=6000.0;
+  if(march0(ro,rd,t)){
+    vec3 p=ro+rd*t;
+    vec4 hi=houseAt(p.xz);
+    float hd=length(p.xz-hi.xy);
+    bool isH=false; float by=0.0;
+    if(hi.z>0.5 && hd<30.0){
+      by=baseH0(vec2(hi.x-hi.w*22.0,hi.y))+2.35;
+      isH=houseSD(p,hi,by)<p.y-hgt(p.xz);
+    }
+    if(isH){
+      col=shadeHouse(p,hi,by,rd);
+    } else {
+      p.y=hgt(p.xz);
+      vec3 n=nrm0(p,t);
+      col=shade0(p,n,rd,t);
+    }
+    col=applyFog(col,t,rd,FOGC,SUNC,SUN,0.00042);
+    tHit=t;
+  }
+  vec4 cl=clouds0(ro,rd,tHit);
+  return col*cl.a+cl.rgb;
+}
+`;
+
+/* =====================================================================
+   REINO 1 — El Camino al Cielo
+   Campos morados y verdes, un camino oscuro recto, arbustos oscuros,
+   torres de nubes gigantes que convergen hacia el sol bajo.
+   ===================================================================== */
+const REALM1 = `
+const vec3 SUN=vec3(0.0971,0.1942,0.9710);
+const vec3 SUNC=vec3(1.0,0.78,0.52);
+const vec3 FOGC=vec3(1.0,0.84,0.68);
+const float EXPO=0.95;
+
+float bushH(vec2 p){
+  vec2 cell=floor(p/60.0);
+  if(h2(cell+vec2(40.0,7.0))<0.5) return 0.0;
+  vec2 c=(cell+vec2(0.5)+(vec2(h2(cell+vec2(1.0,9.0)),h2(cell+vec2(5.0,3.0)))-0.5)*0.5)*60.0;
+  float xm=abs(mod(c.x+400.0,800.0)-400.0);
+  if(xm<16.0) return 0.0;
+  float r=4.0+5.0*h2(cell+vec2(13.0,2.0));
+  float d=length(p-c)/r;
+  float m=max(0.0,1.0-d*d);
+  return r*0.85*m*(1.5-0.5*m);
+}
+float hgt1(vec2 p){
+  float h=7.0*vnoise(p*0.009+vec2(2.0,6.0))+3.0*vnoise(p*0.023+vec2(8.0,1.0));
+  h+=bushH(p);
+  float dx=abs(mod(p.x+400.0,800.0)-400.0);
+  return mix(h,1.0,1.0-smoothstep(3.0,14.0,dx));
+}
+vec3 nrm1(vec3 p, float t){
+  float e=max(0.3,0.0012*t);
+  float hx=hgt1(p.xz+vec2(e,0.0))-hgt1(p.xz-vec2(e,0.0));
+  float hz=hgt1(p.xz+vec2(0.0,e))-hgt1(p.xz-vec2(0.0,e));
+  return normalize(vec3(-hx,2.0*e,-hz));
+}
+
+vec3 sky1(vec3 rd){
+  float y=max(rd.y,0.0);
+  vec3 c=mix(vec3(1.0,0.82,0.62),vec3(0.02,0.05,0.30),pow(y,0.38));
+  float sd=max(dot(rd,SUN),0.0);
+  c+=SUNC*(pow(sd,6.0)*0.5+pow(sd,40.0)*0.8+pow(sd,1500.0)*10.0);
+  return c;
+}
+
+float towerShape(vec3 p){
+  vec2 cell=floor(p.xz/160.0);
+  float he=h2(cell+vec2(17.0,5.0));
+  if(he<0.42) return 0.0;
+  vec2 c=(cell+vec2(0.5)+(vec2(h2(cell+vec2(1.0,2.0)),h2(cell+vec2(3.0,4.0)))-0.5)*0.35)*160.0;
+  float xm=mod(c.x+400.0,800.0)-400.0;
+  if(abs(xm)<75.0) return 0.0;
+  float H=220.0+700.0*h2(cell+vec2(9.0,9.0));
+  float R=20.0+26.0*h2(cell+vec2(7.0,3.0));
+  float yn=p.y/H;
+  if(yn>1.0||yn<0.0) return 0.0;
+  float rr=R*(0.62+0.5*yn);
+  float cap=sqrt(max(0.0,1.0-pow(max(0.0,(yn-0.78)/0.22),2.0)));
+  rr*=cap;
+  float d=length(p.xz-c)-rr;
+  return clamp(-d/(R*0.45),0.0,1.0);
+}
+float towerDen(vec3 p){
+  float b=towerShape(p);
+  if(b<=0.0) return 0.0;
+  float n=fbm3(p*0.028+vec3(0.0,uTime*0.01,0.0));
+  float d=b*1.25+(n-0.5)*1.1-0.12;
+  return clamp(d*1.8,0.0,1.0);
+}
+vec4 clouds1(vec3 ro, vec3 rd, float tEnd){
+  float T=1.0; vec3 acc=vec3(0.0);
+  float t=2.0+h2(gl_FragCoord.xy)*6.0;
+  float tmax=min(tEnd,3200.0);
+  for(int i=0;i<uCl;i++){
+    if(t>tmax||T<0.03) break;
+    vec3 p=ro+rd*t;
+    float dt=8.0+t*0.045;
+    if(p.y>=0.0&&p.y<=960.0){
+      float d=towerDen(p);
+      if(d>0.003){
+        float dl=towerDen(p+SUN*35.0);
+        float dif=clamp((d-dl)*1.6+0.55,0.0,1.0);
+        vec3 amb=mix(vec3(0.40,0.34,0.50),vec3(0.55,0.62,0.88),clamp(p.y/700.0,0.0,1.0));
+        vec3 lit=SUNC*3.0*(0.25+0.75*dif)*exp(-dl*1.2)+amb;
+        lit+=SUNC*pow(max(dot(rd,SUN),0.0),5.0)*2.5*exp(-dl*0.6);
+        lit=mix(lit,FOGC,1.0-exp(-t*0.00028));
+        float a=1.0-exp(-d*0.035*dt);
+        acc+=T*a*lit;
+        T*=1.0-a;
+      }
+    }
+    t+=dt;
+  }
+  return vec4(acc,T);
+}
+float cloudShadow1(vec3 p){
+  float s=towerShape(p+SUN*200.0)+towerShape(p+SUN*520.0)+towerShape(p+SUN*1000.0)+towerShape(p+SUN*1800.0);
+  return exp(-s*1.6);
+}
+
+bool march1(vec3 ro, vec3 rd, out float t){
+  t=0.3; float tp=0.3;
+  for(int i=0;i<uSteps;i++){
+    vec3 p=ro+rd*t;
+    float h=p.y-hgt1(p.xz);
+    if(h<0.0){
+      float a=tp; float b=t;
+      for(int j=0;j<uBis;j++){
+        float m=0.5*(a+b); vec3 q=ro+rd*m;
+        if(q.y<hgt1(q.xz)) b=m; else a=m;
+      }
+      t=0.5*(a+b); return true;
+    }
+    if(h<0.0012*t+0.01) return true;
+    if(p.y>40.0&&rd.y>=0.0) return false;
+    tp=t;
+    t+=max(h*0.7, t<150.0?0.015*t:0.03*t);
+    if(t>3200.0) return false;
+  }
+  return rd.y<0.02;
+}
+float ao1(vec3 p, vec3 n){
+  float occ=0.0; float sca=1.0;
+  for(int i=0;i<uAO;i++){
+    float h=0.4+float(i)*float(i)*0.9;
+    vec3 q=p+n*h;
+    float d=max(q.y-hgt1(q.xz),0.0);
+    occ+=(h-d)*sca; sca*=0.72;
+  }
+  return clamp(1.0-occ/6.5,0.0,1.0);
+}
+
+vec3 shade1(vec3 p, vec3 n, vec3 rd, float t){
+  vec2 q=p.xz;
+  vec2 fcell=floor(vec2(q.x/44.0,q.y/320.0));
+  float sel=h2(fcell+vec2(7.0,3.0));
+  vec3 c1=vec3(0.46,0.20,0.56); vec3 c2=vec3(0.70,0.30,0.52);
+  vec3 c3=vec3(0.24,0.50,0.17); vec3 c4=vec3(0.36,0.58,0.22);
+  vec3 fc=sel<0.28?c1:(sel<0.5?c2:(sel<0.75?c3:c4));
+  float rows=0.84+0.16*sin(q.x*2.4+sel*30.0);
+  float nn=vnoise(q*0.8)*0.5+vnoise(q*3.1)*0.35;
+  vec3 alb=fc*rows*(0.7+0.6*nn);
+  float b=bushH(q);
+  float bm=smoothstep(0.2,1.6,b);
+  alb=mix(alb,vec3(0.05,0.12,0.07)*(0.7+0.6*vnoise(q*1.9)),bm);
+  float dx=abs(mod(q.x+400.0,800.0)-400.0);
+  float roadM=1.0-smoothstep(2.9,3.5,dx+(vnoise(q*1.3)-0.5)*0.5);
+  vec3 roadC=vec3(0.07,0.07,0.09)*(0.8+0.4*vnoise(q*5.0));
+  float line=1.0-smoothstep(0.07,0.14,dx);
+  roadC=mix(roadC,vec3(0.85,0.80,0.65),line);
+  alb=mix(alb,roadC,roadM);
+
+  float bf=1.0-smoothstep(30.0,220.0,t);
+  vec2 g=vec2(vnoise(q*1.9)-vnoise(q*1.9+vec2(0.31,0.0)), vnoise(q*1.9)-vnoise(q*1.9+vec2(0.0,0.31)));
+  n=normalize(n+vec3(g.x,0.0,g.y)*1.2*bf*(1.0-roadM));
+
+  float cs=cloudShadow1(p);
+  float dif=clamp(dot(n,SUN),0.0,1.0);
+  float ao=ao1(p,n);
+  vec3 skyl=mix(vec3(0.20,0.18,0.32),vec3(0.36,0.46,0.78),0.5+0.5*n.y)*ao;
+  vec3 col=alb*(SUNC*3.4*dif*cs+skyl*1.4);
+  col+=alb*vec3(1.0,0.60,0.35)*0.20*ao*(1.0-n.y*0.5);
+  return col;
+}
+
+vec3 render(vec3 ro, vec3 rd){
+  float t;
+  vec3 col=sky1(rd);
+  float tHit=6000.0;
+  if(march1(ro,rd,t)){
+    vec3 p=ro+rd*t;
+    p.y=hgt1(p.xz);
+    vec3 n=nrm1(p,t);
+    col=shade1(p,n,rd,t);
+    col=applyFog(col,t,rd,FOGC,SUNC,SUN,0.00030);
+    tHit=t;
+  }
+  vec4 cl=clouds1(ro,rd,tHit);
+  return col*cl.a+cl.rgb;
+}
+`;
+
+/* =====================================================================
+   REINO 2 — Túnel de Nubes
+   Un mar de nubes que se puede caminar y túneles de nubes gigantes
+   (SDF con desplazamiento "coliflor"), AO real sobre la geometría y
+   la luz al final del túnel.
+   ===================================================================== */
+const REALM2 = `
+const vec3 SUN=vec3(0.1198,0.1697,0.9780);
+const vec3 SUNC=vec3(1.0,0.93,0.80);
+const vec3 FOGC=vec3(0.76,0.87,1.0);
+const float EXPO=1.0;
+
+float seaH(vec2 p){
+  float b1=abs(2.0*vnoise(p*0.010+vec2(4.0,2.0))-1.0);
+  float b2=abs(2.0*vnoise(p*0.027+vec2(9.0,5.0))-1.0);
+  float b3=abs(2.0*vnoise(p*0.07+vec2(1.0,8.0))-1.0);
+  return 9.0*b1+4.0*b2+1.6*b3;
+}
+float tubeBase(vec3 p){
+  vec3 q=p;
+  q.x=mod(q.x+300.0,600.0)-300.0;
+  q.z=mod(q.z+750.0,1500.0)-750.0;
+  float r=length(q.xy-vec2(0.0,40.0));
+  float ring=max(r-97.0,42.0-r);
+  return max(ring,abs(q.z)-350.0);
+}
+float bill(vec3 p){ return abs(2.0*vnoise3(p)-1.0); }
+float tubeFull(vec3 p, float lod){
+  float f=tubeBase(p);
+  if(f>26.0) return f-22.0;
+  float disp=-3.0+(vnoise3(p*0.008)-0.5)*20.0-10.0*(bill(p*0.035)-0.5);
+  if(lod<1400.0) disp-=4.0*(bill(p*0.09+vec3(3.1,1.7,5.3))-0.5);
+  if(lod<600.0)  disp-=1.4*(bill(p*0.23+vec3(1.3,7.1,2.9))-0.5);
+  if(lod<250.0)  disp-=0.5*(bill(p*0.55+vec3(5.9,2.3,8.7))-0.5);
+  return f+disp;
+}
+
+vec3 sky2(vec3 rd){
+  float y=max(rd.y,0.0);
+  vec3 c=mix(vec3(0.80,0.90,1.0),vec3(0.12,0.30,0.74),pow(y,0.42));
+  float sd=max(dot(rd,SUN),0.0);
+  c+=SUNC*(pow(sd,6.0)*0.30+pow(sd,48.0)*0.55+pow(sd,2500.0)*8.0);
+  return c;
+}
+
+bool march2(vec3 ro, vec3 rd, out float t){
+  t=0.15;
+  for(int i=0;i<uSteps;i++){
+    vec3 p=ro+rd*t;
+    float ds=(p.y-seaH(p.xz))*0.6;
+    float fb=tubeBase(p);
+    float dtu;
+    if(fb>26.0) dtu=fb-22.0; else dtu=tubeFull(p,t)*0.45;
+    float d=min(ds,dtu);
+    if(d<0.0007*t+0.012) return true;
+    t+=max(d,0.004*t);
+    if(t>3200.0||(p.y>260.0&&rd.y>0.0)) return false;
+  }
+  return rd.y<0.03;
+}
+
+vec3 nrm2(vec3 p, float t, bool tube){
+  if(tube){
+    const vec2 k=vec2(1.0,-1.0);
+    float e=max(0.5,0.002*t);
+    return normalize(k.xyy*tubeFull(p+k.xyy*e,t)+k.yyx*tubeFull(p+k.yyx*e,t)+
+                     k.yxy*tubeFull(p+k.yxy*e,t)+k.xxx*tubeFull(p+k.xxx*e,t));
+  }
+  float e=max(0.4,0.001*t);
+  float hx=seaH(p.xz+vec2(e,0.0))-seaH(p.xz-vec2(e,0.0));
+  float hz=seaH(p.xz+vec2(0.0,e))-seaH(p.xz-vec2(0.0,e));
+  return normalize(vec3(-hx,2.0*e,-hz));
+}
+
+float shadow2(vec3 ro){
+  float res=1.0; float t=1.0;
+  for(int i=0;i<uSh;i++){
+    vec3 p=ro+SUN*t;
+    float d=min(p.y-seaH(p.xz),tubeFull(p,900.0));
+    res=min(res,6.0*d/t);
+    t+=clamp(d,2.0,60.0);
+    if(res<0.02||t>800.0) break;
+  }
+  return clamp(res,0.0,1.0);
+}
+float ao2(vec3 p, vec3 n){
+  float occ=0.0; float sca=1.0;
+  for(int i=0;i<uAO;i++){
+    float h=0.6+float(i)*float(i)*1.6;
+    vec3 q=p+n*h;
+    float d=max(min(q.y-seaH(q.xz),tubeFull(q,900.0)),0.0);
+    occ+=(h-d)*sca; sca*=0.7;
+  }
+  return clamp(1.0-occ/10.0,0.0,1.0);
+}
+
+vec3 shade2(vec3 p, vec3 n, vec3 rd, float t){
+  float bf=1.0-smoothstep(20.0,200.0,t);
+  vec3 g=vec3(vnoise3(p*0.9)-0.5,vnoise3(p*0.9+vec3(5.0,1.0,2.0))-0.5,vnoise3(p*0.9+vec3(1.0,7.0,3.0))-0.5);
+  n=normalize(n+g*0.35*bf);
+  float sh=shadow2(p+n*0.8);
+  float ao=ao2(p,n);
+  float dif=clamp((dot(n,SUN)+0.25)/1.25,0.0,1.0);
+  float lit=dif*sh;
+  vec3 col=mix(vec3(0.40,0.52,0.78),vec3(1.0,0.97,0.92),lit);
+  col*=mix(vec3(0.66,0.74,0.92),vec3(1.0),0.5+0.5*n.y);
+  col+=vec3(0.95,0.97,1.0)*pow(max(dot(n,vec3(0.0,0.15,0.99)),0.0),1.6)*0.35*ao;
+  col*=mix(0.38,1.0,ao);
+  col+=vec3(0.7,0.8,1.0)*pow(1.0-max(dot(n,-rd),0.0),3.0)*0.12*ao;
+  return col*1.15;
+}
+
+vec3 render(vec3 ro, vec3 rd){
+  float t;
+  vec3 col=sky2(rd);
+  if(march2(ro,rd,t)){
+    if(t<0.6){
+      col=vec3(0.86,0.91,1.0);
+    } else {
+      vec3 p=ro+rd*t;
+      float dS=p.y-seaH(p.xz);
+      float dT=tubeFull(p,t);
+      bool tube=dT<dS;
+      if(!tube) p.y=seaH(p.xz);
+      vec3 n=nrm2(p,t,tube);
+      col=shade2(p,n,rd,t);
+      col=applyFog(col,t,rd,FOGC,SUNC,SUN,0.00032);
+    }
+  }
+  return col;
+}
+`;
+const REALMS = [REALM0, REALM1, REALM2];
+
+/* =====================================================================
+   WEBGL
+   ===================================================================== */
+const cv = $('c');
+const gl = cv.getContext('webgl2', { antialias:false, alpha:false, powerPreference:'high-performance' });
+const errEl = $('err');
+function showError(msg){ errEl.style.display = 'block'; errEl.textContent = 'DreamCure - error de shader:\n' + msg; console.error(msg); }
+if (!gl){ showError('Este navegador no soporta WebGL2. Prueba con Chrome, Edge o Firefox actualizados.'); throw new Error('no webgl2'); }
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || 'compile error');
+  return s;
+}
+const vs = compile(gl.VERTEX_SHADER, VERT);
+const programs = [null, null, null];
+const UNIS = ['uRes','uPos','uFwd','uRight','uUp','uFocal','uTime','uFade','uSteps','uSh','uAO','uCl','uBis'];
+function ensureProgram(r){
+  if (programs[r]) return programs[r];
+  const fs = compile(gl.FRAGMENT_SHADER, COMMON + REALMS[r] + MAIN);
+  const pr = gl.createProgram();
+  gl.attachShader(pr, vs); gl.attachShader(pr, fs); gl.linkProgram(pr);
+  if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr) || 'link error');
+  const u = {}; for (const n of UNIS) u[n] = gl.getUniformLocation(pr, n);
+  programs[r] = { pr, u };
+  return programs[r];
+}
+
+/* =====================================================================
+   RUIDO / ALTURAS EN JS (idéntico al shader, para caminar sobre el terreno)
+   ===================================================================== */
+const ss = (a,b,x) => { const t = Math.min(1, Math.max(0, (x-a)/(b-a))); return t*t*(3-2*t); };
+const mod = (x,y) => x - y*Math.floor(x/y);
+function H2(x,y){
+  const a = Math.imul(x+32768, 1597334673), b = Math.imul(y+32768, 3812015801);
+  return (Math.imul(a ^ b, 1597334673) >>> 8) / 16777216;
+}
+function vn(x,y){
+  const ix = Math.floor(x), iy = Math.floor(y);
+  let fx = x-ix, fy = y-iy; fx = fx*fx*(3-2*fx); fy = fy*fy*(3-2*fy);
+  const a = H2(ix,iy), b = H2(ix+1,iy), c = H2(ix,iy+1), d = H2(ix+1,iy+1);
+  return (a+(b-a)*fx)*(1-fy) + (c+(d-c)*fx)*fy;
+}
+const pathX = z => 70*Math.sin(z*0.011) + 38*Math.sin(z*0.027+1.0);
+function baseH0(x,y){
+  const qx = x + 45*vn(x*0.007+5.2, y*0.007+1.3), qy = y + 45*vn(x*0.007+8.3, y*0.007+2.8);
+  const n1 = (vn(qx*0.0040+11.3, qy*0.0040+7.1) + 0.35*vn(qx*0.0085+3.7, qy*0.0085+19.2))/1.35;
+  const n2 = vn(qx*0.0031+31.1, qy*0.0031+2.9);
+  const t1 = ss(0.42,0.60,n1), t2 = ss(0.50,0.68,n2)*t1;
+  return 48*t1 + 34*t2 + 3*n1 + 5*vn(x*0.018+2.2, y*0.018+6.6);
+}
+function houseAt(x,y){
+  const cz = Math.floor(y/900);
+  const hz = (cz+0.5)*900 + (H2(cz,3)-0.5)*160;
+  const px = pathX(hz);
+  const cx = Math.floor((x-px+350)/700);
+  const ex = H2(cx*7+cz*13, 5);
+  const side = H2(cx+cz*3, 11) < 0.5 ? -1 : 1;
+  return [px+cx*700+side*22, hz, ex > 0.3 ? 1 : 0, side];
+}
+function h0(x,y){
+  const hi = houseAt(x,y);
+  let hd = 1e5, hc = 0;
+  if (hi[2] > 0.5){ hd = Math.hypot(x-hi[0], y-hi[1]); if (hd < 70) hc = baseH0(hi[0]-hi[3]*22, hi[1]); }
+  let h = baseH0(x,y);
+  if (hi[2] > 0.5 && hd < 70){
+    const m = 1 - ss(18,64,hd);
+    const tgt = hc + 2.5*(1 - ss(0,40,hd));
+    h = h + (tgt-h)*m;
+  }
+  const q = mod(x - pathX(y) + 350, 700) - 350;
+  const dp = Math.abs(q);
+  if (dp < 14){
+    const pc = baseH0(x-q, y);
+    const m = 1 - ss(1.8,14,dp);
+    h = h + (pc-h)*m;
+  }
+  return h;
+}
+function bushH(x,y){
+  const cx0 = Math.floor(x/60), cy0 = Math.floor(y/60);
+  if (H2(cx0+40, cy0+7) < 0.5) return 0;
+  const cx = (cx0+0.5+(H2(cx0+1, cy0+9)-0.5)*0.5)*60;
+  const cy = (cy0+0.5+(H2(cx0+5, cy0+3)-0.5)*0.5)*60;
+  if (Math.abs(mod(cx+400,800)-400) < 16) return 0;
+  const r = 4 + 5*H2(cx0+13, cy0+2);
+  const d = Math.hypot(x-cx, y-cy)/r;
+  const m = Math.max(0, 1-d*d);
+  return r*0.85*m*(1.5-0.5*m);
+}
+function h1(x,y){
+  let h = 7*vn(x*0.009+2.0, y*0.009+6.0) + 3*vn(x*0.023+8.0, y*0.023+1.0);
+  h += bushH(x,y);
+  const dx = Math.abs(mod(x+400,800)-400);
+  const m = 1 - ss(3,14,dx);
+  return h + (1-h)*m;
+}
+function h2s(x,y){
+  const b1 = Math.abs(2*vn(x*0.010+4.0, y*0.010+2.0)-1);
+  const b2 = Math.abs(2*vn(x*0.027+9.0, y*0.027+5.0)-1);
+  const b3 = Math.abs(2*vn(x*0.07+1.0,  y*0.07+8.0)-1);
+  return 9*b1 + 4*b2 + 1.6*b3;
+}
+const groundAt = (r,x,z) => r === 0 ? h0(x,z) : r === 1 ? h1(x,z) : h2s(x,z);
+
+/* =====================================================================
+   ESTADO DEL JUGADOR
+   ===================================================================== */
+const EYE = 1.75;
+let realm = 0, started = false, locked = false, noLock = false;
+let px = 0, py = 10, pz = 0, vx = 0, vz = 0, vyF = 0, vy = 0;
+let yaw = 0, pitch = 0, fly = false, onGround = true, bobPhase = 0, lastStepIdx = 0;
+let fade = 1, trans = null, time = 0, jumpReq = false;
+const keys = {};
+const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const touch = { moveId:null, lookId:null, mx:0, my:0, sx:0, sy:0, lx:0, ly:0, run:false };
+
+function spawn(r){
+  vx = vz = vyF = vy = 0; fly = false; window.DreamCure.flying = false;
+  if (r === 0){ px = pathX(0); pz = 0; yaw = Math.atan2(70*0.011 + 38*0.027*Math.cos(1.0), 1); }
+  else if (r === 1){ px = 0; pz = 0; yaw = 0; }
+  else { px = 0; pz = -60; yaw = 0; }
+  pitch = r === 2 ? 0.02 : 0.05;
+  py = groundAt(r,px,pz) + EYE; onGround = true;
+}
+
+/* ---------- HUD ---------- */
+const zoneEl = $('zone'), toastEl = $('toast'), hintEl = $('hint'), infoEl = $('info'), realmsEl = $('realms');
+let zoneTimer = 0, toastTimer = 0;
+function showZone(){
+  zoneEl.textContent = REALM_NAMES[realm]; zoneEl.classList.add('show');
+  clearTimeout(zoneTimer); zoneTimer = setTimeout(() => zoneEl.classList.remove('show'), 4800);
+  renderRealms();
+}
+function toast(t){ toastEl.textContent = t; toastEl.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800); }
+function renderRealms(){
+  realmsEl.innerHTML = REALM_NAMES.map((n,i) => `<div class="${i===realm?'cur':''}"><b>${i+1}</b> <span class="${i===realm?'cur':''}">${n}</span></div>`).join('');
+}
+renderRealms();
+
+/* ---------- Cambio de reino ---------- */
+function gotoRealm(r){
+  if (trans || !started) return;
+  r = ((r % 3) + 3) % 3;
+  if (r === realm) return;
+  trans = { phase:0, t:0, target:r };
+}
+function stepTrans(dt){
+  trans.t += dt;
+  if (trans.phase === 0){
+    fade = Math.min(1, trans.t/0.6);
+    if (trans.t >= 0.6){
+      try { ensureProgram(trans.target); }
+      catch(e){ showError(e.message); trans = null; fade = 0; return; }
+      realm = trans.target; window.DreamCure.realm = realm;
+      spawn(realm); showZone();
+      if (window.DreamCure.onRealm) window.DreamCure.onRealm(realm, REALM_NAMES[realm]);
+      trans.phase = 1; trans.t = 0; resetAdapt();
+    }
+  } else {
+    fade = 1 - Math.min(1, trans.t/1.4);
+    if (trans.t >= 1.4){ trans = null; fade = 0; }
+  }
+}
+
+/* ---------- Movimiento ---------- */
+function update(dt){
+  time += dt;
+  if (trans) stepTrans(dt);
+  else if (!started){ fade = Math.max(0.0, fade - dt*0.8); }
+
+  const active = started && !trans && (locked || noLock || isTouch);
+  let f = 0, r = 0;
+  if (active){
+    f = (keys.KeyW?1:0) - (keys.KeyS?1:0) + (isTouch ? -touch.my : 0);
+    r = (keys.KeyD?1:0) - (keys.KeyA?1:0) + (isTouch ? touch.mx : 0);
+    const len = Math.hypot(f,r); if (len > 1){ f /= len; r /= len; }
+  }
+  const run = active && (keys.ShiftLeft || keys.ShiftRight || touch.run);
+  const spd = fly ? (run ? 170 : 55) : (run ? 11 : 4.8);
+  const sy = Math.sin(yaw), cy = Math.cos(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  let tx, tz, tvy = 0;
+  if (fly){
+    tx = (sy*cp*f + cy*r)*spd; tz = (cy*cp*f - sy*r)*spd;
+    tvy = sp*f*spd + (((keys.Space?1:0) - ((keys.ControlLeft||keys.KeyC)?1:0)) * spd*0.7);
+  } else { tx = (sy*f + cy*r)*spd; tz = (cy*f - sy*r)*spd; }
+  const k = Math.min(1, dt*((onGround || fly) ? 9 : 2.2));
+  vx += (tx - vx)*k; vz += (tz - vz)*k;
+  px += vx*dt; pz += vz*dt;
+
+  const g = groundAt(realm, px, pz), tgt = g + EYE;
+  if (fly){
+    vyF += (tvy - vyF)*Math.min(1, dt*6);
+    py += vyF*dt;
+    if (py < g + 1.2) py = g + 1.2;
+    onGround = false;
+  } else {
+    if (active && jumpReq && onGround){ vy = 6.5; onGround = false; if (window.DreamCure.onJump) window.DreamCure.onJump(); }
+    jumpReq = false;
+    if (onGround){
+      py += (tgt - py)*Math.min(1, dt*20);
+      if (py > tgt + 0.4) onGround = false;
+    }
+    if (!onGround){
+      vy -= 13*dt; py += vy*dt;
+      if (py <= tgt && vy <= 0){ py = tgt; vy = 0; onGround = true; if (window.DreamCure.onLand) window.DreamCure.onLand(); }
+    }
+  }
+  jumpReq = false;
+
+  const sp2 = Math.hypot(vx, vz);
+  if (onGround && !fly) bobPhase += sp2*dt*1.5;
+  const si = Math.floor(bobPhase/Math.PI);
+  if (si !== lastStepIdx){
+    lastStepIdx = si;
+    if (active && sp2 > 1 && window.DreamCure.onStep) window.DreamCure.onStep({ running:!!run, realm });
+  }
+  window.DreamCure.pos = [px, py, pz];
+}
+
+/* =====================================================================
+   RENDER + RESOLUCIÓN ADAPTATIVA
+   ===================================================================== */
+const QUALITY = [
+  { name:'ligera',  cap:0.55, steps:110, sh:12, ao:4, cl:[18,36], bis:5 },
+  { name:'media',   cap:0.8,  steps:150, sh:18, ao:5, cl:[26,56], bis:6 },
+  { name:'alta',    cap:1.0,  steps:190, sh:24, ao:5, cl:[38,80], bis:7 }
+];
+let qIdx = 1, scale = 0.6, rw = 2, rh = 2;
+function applySize(){
+  const q = QUALITY[qIdx];
+  scale = Math.min(scale, q.cap);
+  rw = Math.max(2, Math.floor(window.innerWidth*scale));
+  rh = Math.max(2, Math.floor(window.innerHeight*scale));
+  cv.width = rw; cv.height = rh;
+  gl.viewport(0,0,rw,rh);
+}
+let accT = 0, accN = 0, cool = 0;
+function resetAdapt(){ accT = 0; accN = 0; cool = 2; }
+function adapt(dt){
+  if (trans) { resetAdapt(); return; }
+  accT += dt; accN++;
+  if (accN >= 40){
+    const avg = accT/accN; accT = 0; accN = 0;
+    if (cool > 0){ cool--; return; }
+    const cap = QUALITY[qIdx].cap;
+    if (avg > 0.024 && scale > 0.28){ scale *= 0.86; applySize(); cool = 1; }
+    else if (avg < 0.0185 && scale < cap){ scale = Math.min(cap, scale*1.07); applySize(); cool = 2; }
+  }
+}
+window.addEventListener('resize', applySize);
+
+function draw(){
+  const P = programs[realm];
+  if (!P) return;
+  gl.useProgram(P.pr);
+  const u = P.u, q = QUALITY[qIdx];
+  const bob = onGround && !fly ? Math.sin(bobPhase)*0.035 : 0;
+  const cp = Math.cos(pitch), spn = Math.sin(pitch), sy = Math.sin(yaw), cy = Math.cos(yaw);
+  const fx = sy*cp, fy = spn, fz = cy*cp;
+  const rx = cy, rz = -sy;
+  const ux = fy*rz, uy = fz*rx - fx*rz, uz = -fy*rx;
+  gl.uniform2f(u.uRes, rw, rh);
+  gl.uniform3f(u.uPos, px, py + bob, pz);
+  gl.uniform3f(u.uFwd, fx, fy, fz);
+  gl.uniform3f(u.uRight, rx, 0, rz);
+  gl.uniform3f(u.uUp, ux, uy, uz);
+  gl.uniform1f(u.uFocal, 0.714);
+  gl.uniform1f(u.uTime, time);
+  gl.uniform1f(u.uFade, fade);
+  gl.uniform1i(u.uSteps, q.steps);
+  gl.uniform1i(u.uSh, q.sh);
+  gl.uniform1i(u.uAO, q.ao);
+  gl.uniform1i(u.uCl, realm === 1 ? q.cl[1] : q.cl[0]);
+  gl.uniform1i(u.uBis, q.bis);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+let last = 0, fpsAcc = 0, fpsN = 0;
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last)/1000 || 0); last = now;
+  update(dt); draw(); adapt(dt);
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc > 0.5){
+    if (infoEl.classList.contains('show'))
+      infoEl.textContent = `${Math.round(fpsN/fpsAcc)} fps · ${rw}×${rh} (${Math.round(scale*100)}%) · calidad ${QUALITY[qIdx].name}`;
+    fpsAcc = 0; fpsN = 0;
+  }
+}
+
+/* =====================================================================
+   ENTRADA
+   ===================================================================== */
+const titleEl = $('title'), pauseEl = $('pause');
+function setPauseUI(){ pauseEl.classList.toggle('show', started && !locked && !noLock && !isTouch); if (window.DreamCure.onPause) window.DreamCure.onPause(pauseEl.classList.contains('show')); }
+function requestLock(){ try { const p = cv.requestPointerLock(); if (p && p.catch) p.catch(() => { noLock = true; setPauseUI(); }); } catch(e){ noLock = true; } }
+
+$('start').addEventListener('click', () => {
+  if (started) return;
+  try { ensureProgram(0); } catch(e){ showError(e.message); return; }
+  started = true; titleEl.classList.add('hide');
+  if (!isTouch) requestLock();
+  showZone(); hintEl.classList.add('show'); setTimeout(() => hintEl.classList.remove('show'), 9000);
+  if (window.DreamCure.onStart) window.DreamCure.onStart();
+});
+pauseEl.addEventListener('click', () => requestLock());
+document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === cv; setPauseUI(); });
+document.addEventListener('pointerlockerror', () => { noLock = true; setPauseUI(); });
+document.addEventListener('mousemove', e => {
+  if (locked){ yaw += e.movementX*0.0022; pitch = Math.max(-1.5, Math.min(1.5, pitch - e.movementY*0.0022)); }
+  else if (noLock && (e.buttons & 1)){ yaw += e.movementX*0.0032; pitch = Math.max(-1.5, Math.min(1.5, pitch - e.movementY*0.0032)); }
+});
+window.addEventListener('keydown', e => {
+  if (e.repeat){ if (e.code === 'Space' || e.code === 'Tab') e.preventDefault(); return; }
+  keys[e.code] = true;
+  if (e.code === 'Space'){ e.preventDefault(); jumpReq = true; }
+  if (e.code === 'Tab'){ e.preventDefault(); gotoRealm(realm + 1); }
+  if (!started) return;
+  if (e.code === 'Digit1') gotoRealm(0);
+  if (e.code === 'Digit2') gotoRealm(1);
+  if (e.code === 'Digit3') gotoRealm(2);
+  if (e.code === 'KeyF'){ fly = !fly; vy = 0; vyF = 0; window.DreamCure.flying = fly; toast(fly ? 'Vuelo activado' : 'Vuelo desactivado'); }
+  if (e.code === 'KeyH') infoEl.classList.toggle('show');
+  if (e.code === 'KeyQ'){ qIdx = (qIdx + 1) % QUALITY.length; scale = Math.min(QUALITY[qIdx].cap, Math.max(scale, 0.45)); applySize(); resetAdapt(); toast('Calidad ' + QUALITY[qIdx].name); }
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+/* Táctil: mitad izquierda = mover, mitad derecha = mirar */
+if (isTouch){
+  window.addEventListener('touchstart', e => {
+    if (!started) return;
+    for (const t of e.changedTouches){
+      if (t.clientX < window.innerWidth/2 && touch.moveId === null){ touch.moveId = t.identifier; touch.sx = t.clientX; touch.sy = t.clientY; }
+      else if (touch.lookId === null){ touch.lookId = t.identifier; touch.lx = t.clientX; touch.ly = t.clientY; }
+    }
+  }, { passive:true });
+  window.addEventListener('touchmove', e => {
+    for (const t of e.changedTouches){
+      if (t.identifier === touch.moveId){
+        touch.mx = Math.max(-1, Math.min(1, (t.clientX - touch.sx)/60));
+        touch.my = Math.max(-1, Math.min(1, (t.clientY - touch.sy)/60));
+        touch.run = Math.hypot(touch.mx, touch.my) > 0.98 && (touch.my < -0.9);
+      } else if (t.identifier === touch.lookId){
+        yaw += (t.clientX - touch.lx)*0.005; pitch = Math.max(-1.5, Math.min(1.5, pitch - (t.clientY - touch.ly)*0.005));
+        touch.lx = t.clientX; touch.ly = t.clientY;
+      }
+    }
+  }, { passive:true });
+  const endT = e => { for (const t of e.changedTouches){
+    if (t.identifier === touch.moveId){ touch.moveId = null; touch.mx = touch.my = 0; touch.run = false; }
+    if (t.identifier === touch.lookId) touch.lookId = null;
+  } };
+  window.addEventListener('touchend', endT); window.addEventListener('touchcancel', endT);
+  $('hint').textContent = 'Mitad izquierda: mover (arrastra arriba para correr) · mitad derecha: mirar';
+}
+
+/* =====================================================================
+   ARRANQUE
+   ===================================================================== */
+applySize();
+spawn(0);
+try { ensureProgram(0); } catch(e){ showError(e.message); }
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
